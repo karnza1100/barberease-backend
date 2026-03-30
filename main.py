@@ -2,11 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pythainlp
-from typing import List
 
 app = FastAPI()
 
-# อนุญาตให้หน้าเว็บ (GitHub Pages) ส่งข้อมูลมาที่เซิร์ฟเวอร์นี้ได้
+# อนุญาตให้ Frontend ยิงข้อมูลเข้ามาได้ (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,14 +14,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ตัวแปรจำลองฐานข้อมูลในหน่วยความจำ (ถ้าปิดโปรแกรมข้อมูลจะหาย)
-database_reviews = []
+# ข้อมูลเริ่มต้นจำลอง (Initial Data) เพื่อให้แดชบอร์ดมีข้อมูลตั้งแต่เปิดมา
+database_reviews = [
+    {
+        "original_text": "ตัดผมสวยถูกใจมากครับ ช่างเก็บงานละเอียดดีมาก",
+        "tokens": ["ตัดผม", "สวย", "ถูกใจ", "มาก", "ช่าง", "เก็บงาน", "ละเอียด"],
+        "sentiment": "Positive",
+        "category": "คุณภาพงานช่าง"
+    },
+    {
+        "original_text": "แอร์ไม่ค่อยเย็น เลย แถมรอนานเกือบชั่วโมง",
+        "tokens": ["แอร์", "ไม่", "ค่อย", "เย็น", "แถม", "รอ", "นาน", "เกือบ", "ชั่วโมง"],
+        "sentiment": "Negative",
+        "category": "สถานที่และสิ่งอำนวยความสะดวก"
+    },
+    {
+        "original_text": "จองคิวตอนบ่ายสอง ได้ตัดจริงบ่ายสองครึ่ง ถือว่าโอเคครับ",
+        "tokens": ["จองคิว", "บ่ายสอง", "ตัด", "จริง", "บ่ายสองครึ่ง"],
+        "sentiment": "Positive",
+        "category": "ระบบการจอง"
+    }
+]
 
 # โครงสร้างข้อมูลที่รับมาจากหน้าเว็บ
 class ReviewModel(BaseModel):
     message: str
 
-# 1. เพิ่ม Route หน้าแรกเพื่อแก้ปัญหา 404 Not Found
 @app.get("/")
 def read_root():
     return {
@@ -31,25 +48,25 @@ def read_root():
         "total_reviews": len(database_reviews)
     }
 
-# 2. Route สำหรับรับข้อมูลรีวิว
+# Route สำหรับรับข้อมูลรีวิว
 @app.post("/api/submit-review")
 def submit_review(data: ReviewModel):
-    # 2.1 ตัดคำภาษาไทย (Morphological Level) ด้วย PyThaiNLP
+    # 1. ตัดคำภาษาไทย (Morphological Level) ด้วย PyThaiNLP
     words = pythainlp.word_tokenize(data.message, engine="newmm")
     
-    # 2.2 วิเคราะห์ Sentiment (บวก/ลบ) เบื้องต้น
+    # 2. วิเคราะห์ Sentiment (บวก/ลบ) เบื้องต้น
     sentiment = "Positive"
-    negative_keywords = ["ช้า", "นาน", "ร้อน", "แย่", "ไม่ค่อยเย็น", "คิวยาว", "แพง"]
+    negative_keywords = ["ช้า", "นาน", "ร้อน", "แย่", "ไม่ค่อยเย็น", "คิวยาว", "แพง", "ปรับปรุง"]
     for kw in negative_keywords:
         if kw in data.message:
             sentiment = "Negative"
             break
             
-    # 2.3 เพิ่มการจำลองแยก Category (เพื่อให้หน้าเว็บนำไปวาดกราฟได้สวยงาม)
+    # 3. แยก Category (เพื่อให้หน้าเว็บนำไปวาดกราฟได้)
     category = "ทั่วไป"
-    if "ช่าง" in data.message or "ตัด" in data.message:
+    if "ช่าง" in data.message or "ตัด" in data.message or "สระ" in data.message:
         category = "คุณภาพงานช่าง"
-    elif "สะอาด" in data.message or "แอร์" in data.message or "ร้าน" in data.message:
+    elif "สะอาด" in data.message or "แอร์" in data.message or "ร้าน" in data.message or "ร้อน" in data.message:
         category = "สถานที่และสิ่งอำนวยความสะดวก"
     elif "คิว" in data.message or "รอ" in data.message or "จอง" in data.message:
         category = "ระบบการจอง"
@@ -60,16 +77,15 @@ def submit_review(data: ReviewModel):
         "original_text": data.message,
         "tokens": words,
         "sentiment": sentiment,
-        "category": category  # เพิ่มเพื่อให้หน้าเว็บดึงไปจัดหมวดหมู่ได้
+        "category": category
     }
     
-    # บันทึกข้อมูลลงในรายการ
-    database_reviews.append(review_result)
+    # บันทึกข้อมูลแบบยัดขึ้นไปไว้บนสุด (เพื่อให้เห็นผลทันทีในตาราง)
+    database_reviews.insert(0, review_result)
     
     return {"status": "success", "data": review_result}
 
-# 3. Route สำหรับดึงข้อมูลรีวิวทั้งหมดไปโชว์ที่ Dashboard
+# Route สำหรับดึงข้อมูลรีวิวทั้งหมดไปโชว์ที่ Dashboard
 @app.get("/api/get-reviews")
 def get_reviews():
-    # ดึงข้อมูลรีวิวทั้งหมดส่งกลับไปให้หน้าเว็บของคุณ
     return database_reviews
