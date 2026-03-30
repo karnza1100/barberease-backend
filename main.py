@@ -6,12 +6,11 @@ from pythainlp.tag import pos_tag
 
 app = FastAPI()
 
-# --- [จุดที่ต้องแก้ไข] ปรับปรุงเรื่อง CORS ให้รองรับการเชื่อมต่อข้ามโดเมน ---
+# --- ปรับปรุงเรื่อง CORS ให้รองรับการเชื่อมต่อข้ามโดเมน ---
 app.add_middleware(
     CORSMiddleware,
-    # หากต้องการความปลอดภัยสูง ให้เปลี่ยน "*" เป็น URL ของ Frontend เช่น "https://your-frontend.vercel.app"
     allow_origins=["*"], 
-    allow_credentials=False, # เปลี่ยนเป็น False เมื่อใช้ allow_origins=["*"] เพื่อไม่ให้ติดเรื่อง Security
+    allow_credentials=False, 
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -54,13 +53,24 @@ def submit_review(data: ReviewModel):
     pos = pos_tag(words, engine="perceptron", corpus="orchid")
     pos_tags_list = [[word, tag] for word, tag in pos]
     
+    # --- [ส่วนที่ปรับปรุง: Sentiment Analysis] ---
     sentiment = "Positive"
-    negative_keywords = ["ช้า", "นาน", "ร้อน", "แย่", "ไม่ค่อยเย็น", "คิวยาว", "แพง", "ปรับปรุง", "ไม่สวย", "สกปรก"]
-    for kw in negative_keywords:
+    
+    # 1. เช็กคำปฏิเสธหรือคำบ่นที่มักมองข้าม (ครอบคลุมเคส "ไม่มีที่จอดรถ")
+    negation_keywords = ["ไม่มี", "ไม่ค่อย", "ไม่ค่อยดี", "ไม่ค่อยสวย", "ไม่ประทับใจ", "แย่"]
+    
+    # 2. คำบ่นทั่วไป
+    negative_keywords = ["ช้า", "นาน", "ร้อน", "แย่", "คิวยาว", "แพง", "ปรับปรุง", "ไม่สวย", "สกปรก", "เหม็น", "เจ็บ", "สั้นไป", "แหว่ง"]
+    
+    # รวมการตรวจสอบทั้งสองแบบ
+    all_negatives = negation_keywords + negative_keywords
+    
+    for kw in all_negatives:
         if kw in data.message:
             sentiment = "Negative"
             break
             
+    # --- [ส่วนจัดหมวดหมู่] (คงเดิมตามระบบของคุณ) ---
     category = "ทั่วไป"
     if any(word in data.message for word in ["ช่าง", "ตัด", "สระ", "ไดร์", "ซอย", "ทรง"]):
         category = "คุณภาพงานช่าง"
@@ -80,10 +90,10 @@ def submit_review(data: ReviewModel):
     if not keywords and len(words) > 0:
         keywords = words[:2]
 
-    # --- [จุดที่ต้องแก้ไข] ปรับโครงสร้างข้อมูลที่ส่งกลับไปให้ตรงกับที่ Frontend ต้องการ ---
+    # --- ปรับโครงสร้างข้อมูลที่ส่งกลับไปให้ตรงกับที่ Frontend ต้องการ ---
     review_result = {
-        "id": len(database_reviews) + 1, # เพิ่ม ID ให้ Frontend ใช้อ้างอิง
-        "text": data.message, # Frontend เก่าอาจจะมองหาคีย์ 'text' แทน 'original_text'
+        "id": len(database_reviews) + 1, 
+        "text": data.message, 
         "original_text": data.message,
         "tokens": words,
         "pos_tags": pos_tags_list,
@@ -94,7 +104,6 @@ def submit_review(data: ReviewModel):
     
     database_reviews.insert(0, review_result)
     
-    # ส่งก้อน data กลับไปแบบตรงๆ
     return review_result
 
 @app.get("/api/get-reviews")
