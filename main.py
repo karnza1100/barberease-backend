@@ -6,16 +6,16 @@ from pythainlp.tag import pos_tag
 
 app = FastAPI()
 
-# อนุญาตให้ Frontend ยิงข้อมูลเข้ามาได้ (CORS)
+# --- [จุดที่ต้องแก้ไข] ปรับปรุงเรื่อง CORS ให้รองรับการเชื่อมต่อข้ามโดเมน ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    # หากต้องการความปลอดภัยสูง ให้เปลี่ยน "*" เป็น URL ของ Frontend เช่น "https://your-frontend.vercel.app"
+    allow_origins=["*"], 
+    allow_credentials=False, # เปลี่ยนเป็น False เมื่อใช้ allow_origins=["*"] เพื่อไม่ให้ติดเรื่อง Security
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ข้อมูลเริ่มต้นจำลอง (Initial Data) ที่มีโครงสร้างแบบละเอียดขึ้น
 database_reviews = [
     {
         "original_text": "ตัดผมสวยถูกใจมากครับ ช่างเก็บงานละเอียดดีมาก",
@@ -35,7 +35,6 @@ database_reviews = [
     }
 ]
 
-# โครงสร้างข้อมูลที่รับมาจากหน้าเว็บ
 class ReviewModel(BaseModel):
     message: str
 
@@ -47,19 +46,14 @@ def read_root():
         "total_reviews": len(database_reviews)
     }
 
-# Route สำหรับรับข้อมูลรีวิว
 @app.post("/api/submit-review")
 def submit_review(data: ReviewModel):
-    # 1. ตัดคำภาษาไทย (Morphological Level)
     words = pythainlp.word_tokenize(data.message, engine="newmm", keep_whitespace=False)
     
-    # 2. ทำ Part-of-Speech Tagging (Lexical Level)
-    # ผลลัพธ์จะได้เป็น list ของ tuple เช่น [('ตัดผม', 'VACT'), ('สวย', 'VATT')]
+    # ดึง tuple POS Tag
     pos = pos_tag(words, engine="perceptron", corpus="orchid")
-    # แปลง tuple เป็น list เพื่อให้แปลงเป็น JSON และส่งไป Frontend ได้ง่ายขึ้น
     pos_tags_list = [[word, tag] for word, tag in pos]
     
-    # 3. วิเคราะห์ Sentiment (บวก/ลบ) 
     sentiment = "Positive"
     negative_keywords = ["ช้า", "นาน", "ร้อน", "แย่", "ไม่ค่อยเย็น", "คิวยาว", "แพง", "ปรับปรุง", "ไม่สวย", "สกปรก"]
     for kw in negative_keywords:
@@ -67,7 +61,6 @@ def submit_review(data: ReviewModel):
             sentiment = "Negative"
             break
             
-    # 4. แยก Category ตาม Keyword
     category = "ทั่วไป"
     if any(word in data.message for word in ["ช่าง", "ตัด", "สระ", "ไดร์", "ซอย", "ทรง"]):
         category = "คุณภาพงานช่าง"
@@ -78,33 +71,32 @@ def submit_review(data: ReviewModel):
     elif any(word in data.message for word in ["คุ้ม", "ราคา", "บาท", "ถูก", "แพง"]):
         category = "ราคาและความคุ้มค่า"
         
-    # 5. สกัด Keyword สำคัญ (ดึงเฉพาะคำนาม NCMN และคำกริยา VACT/VATT)
-    # เพื่อเอาไปโชว์ในช่อง Keywords ของระบบ
     keywords = []
     for word, tag in pos:
         if tag in ["NCMN", "VACT", "VATT"] and len(word) > 1:
             if word not in keywords:
                 keywords.append(word)
                 
-    # ถ้าหา keyword จาก POS ไม่เจอเลย ให้เอาคำแรกๆ ไปใช้แทน
     if not keywords and len(words) > 0:
         keywords = words[:2]
 
+    # --- [จุดที่ต้องแก้ไข] ปรับโครงสร้างข้อมูลที่ส่งกลับไปให้ตรงกับที่ Frontend ต้องการ ---
     review_result = {
+        "id": len(database_reviews) + 1, # เพิ่ม ID ให้ Frontend ใช้อ้างอิง
+        "text": data.message, # Frontend เก่าอาจจะมองหาคีย์ 'text' แทน 'original_text'
         "original_text": data.message,
         "tokens": words,
         "pos_tags": pos_tags_list,
         "sentiment": sentiment,
         "category": category,
-        "keywords": keywords[:3] # เอาไปแสดงผลแค่ 3 คำเด่นๆ
+        "keywords": keywords[:3]
     }
     
-    # บันทึกข้อมูลแบบยัดขึ้นไปไว้บนสุด (เพื่อให้เห็นผลทันทีในตาราง)
     database_reviews.insert(0, review_result)
     
-    return {"status": "success", "data": review_result}
+    # ส่งก้อน data กลับไปแบบตรงๆ
+    return review_result
 
-# Route สำหรับดึงข้อมูลรีวิวทั้งหมดไปโชว์ที่ Dashboard
 @app.get("/api/get-reviews")
 def get_reviews():
     return database_reviews
