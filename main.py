@@ -53,16 +53,12 @@ def submit_review(data: ReviewModel):
     pos = pos_tag(words, engine="perceptron", corpus="orchid")
     pos_tags_list = [[word, tag] for word, tag in pos]
     
-    # --- [ส่วนที่ปรับปรุง: Sentiment Analysis] ---
+    # --- [ส่วนจัดหมวดหมู่ Sentiment] ---
     sentiment = "Positive"
     
-    # 1. เช็กคำปฏิเสธหรือคำบ่นที่มักมองข้าม (ครอบคลุมเคส "ไม่มีที่จอดรถ")
     negation_keywords = ["ไม่มี", "ไม่ค่อย", "ไม่ค่อยดี", "ไม่ค่อยสวย", "ไม่ประทับใจ", "แย่"]
-    
-    # 2. คำบ่นทั่วไป
     negative_keywords = ["ช้า", "นาน", "ร้อน", "แย่", "คิวยาว", "แพง", "ปรับปรุง", "ไม่สวย", "สกปรก", "เหม็น", "เจ็บ", "สั้นไป", "แหว่ง"]
     
-    # รวมการตรวจสอบทั้งสองแบบ
     all_negatives = negation_keywords + negative_keywords
     
     for kw in all_negatives:
@@ -70,7 +66,7 @@ def submit_review(data: ReviewModel):
             sentiment = "Negative"
             break
             
-    # --- [ส่วนจัดหมวดหมู่] (คงเดิมตามระบบของคุณ) ---
+    # --- [ส่วนจัดหมวดหมู่ Category] ---
     category = "ทั่วไป"
     if any(word in data.message for word in ["ช่าง", "ตัด", "สระ", "ไดร์", "ซอย", "ทรง"]):
         category = "คุณภาพงานช่าง"
